@@ -68,18 +68,25 @@ async def predict_disease(
         tensor = preprocess_image(output_path)
 
         sex, view = extract_dicom_metadata(dicom_path)
-        sex  = sex.capitalize()
-        view_tensor = torch.tensor([VIEW_MAP[view]], dtype=torch.long).to(DEVICE)
-        sex_tensor  = torch.tensor([SEX_MAP[sex]], dtype=torch.long).to(DEVICE)
+
+        response = {}
+        run_abnormal_pipeline = True
+
+        if sex != '' and view != '':
+            sex  = sex.capitalize()
+            view_tensor = torch.tensor([VIEW_MAP[view]], dtype=torch.long).to(DEVICE)
+            sex_tensor  = torch.tensor([SEX_MAP[sex]], dtype=torch.long).to(DEVICE)
         
-        na_response = na_predict(na_model, tensor, view_tensor, sex_tensor)
+            na_response = na_predict(na_model, tensor, view_tensor, sex_tensor)
 
-        print("NA Prediction:", na_response)
+            print("NA Prediction:", na_response)
 
-        if na_response == "Normal":
-            print("Image classified as Normal. Skipping TB and disease classification.")
-            response   = {"finding": na_response}
-        else:
+            if na_response == "Normal":
+                print("Image classified as Normal. Skipping TB and disease classification.")
+                response   = {"finding": na_response}
+                run_abnormal_pipeline = False
+        
+        if run_abnormal_pipeline:
             print("Image classified as Abnormal. Proceeding with TB and disease classification.")
             # tb_response = tb_predict(tb_model, tensor)
             # image = Image.open(output_path)
@@ -93,17 +100,20 @@ async def predict_disease(
 
             tb_future = loop.run_in_executor(
                 executor, tb_predict, tb_model, tensor
-            )
+            )   
 
             disease_future = loop.run_in_executor(
                 executor, disease_classify, disease_model, img_tensor2, LABELS
             )
 
             tb_response, diseases = await asyncio.gather(tb_future, disease_future)
-
-            response   = {"finding": na_response}
-            response["tb_prediction"] = tb_response
-            response["diseases"] = diseases
+            
+            if tb_response == "TB Negative" and len(diseases) == 0:
+                response = {"finding": "Normal"}
+            else:
+                response = {"finding": "Abnormal"}
+                response["tb_prediction"] = tb_response
+                response["diseases"] = diseases
 
         # ── 6. Save finding to predictions.json ──────────────────────────
         json_filepath = os.path.join(outputDir, "predictions.json")
