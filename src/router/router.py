@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from model.na_model import load_na_model
 from model.tb_model import load_tb_model
 from model.disease_classification_model import load_disease_classification_model
-from utils.utils import preprocess_image, na_predict, tb_predict, disease_classify, dicom_to_image, prepare_image, extract_dicom_metadata
+from utils.utils import preprocess_image, na_predict, tb_predict, disease_classify, dicom_to_image, prepare_image, extract_dicom_metadata, generate_heatmap
 from fastapi.responses import JSONResponse
 
 from src.configuration.config import DICOM_TEMP_PATH, outputDir, VIEW_MAP, SEX_MAP, DEVICE, LABELS
@@ -70,21 +70,30 @@ async def predict_disease(
         sex, view = extract_dicom_metadata(dicom_path)
 
         response = {}
+        heatmaps = []
         run_abnormal_pipeline = True
+        abnormality__heatmap = False
 
         if sex != '' and view != '':
             sex  = sex.capitalize()
             view_tensor = torch.tensor([VIEW_MAP[view]], dtype=torch.long).to(DEVICE)
             sex_tensor  = torch.tensor([SEX_MAP[sex]], dtype=torch.long).to(DEVICE)
         
-            na_response = na_predict(na_model, tensor, view_tensor, sex_tensor)
+            na_response, normal_attn = na_predict(na_model, tensor, view_tensor, sex_tensor)
 
             print("NA Prediction:", na_response)
+            response   = {"finding": na_response}
 
             if na_response == "Normal":
                 print("Image classified as Normal. Skipping TB and disease classification.")
-                response   = {"finding": na_response}
                 run_abnormal_pipeline = False
+            else:
+                na_heatmap_img = generate_heatmap(
+                    tensor,
+                    normal_attn
+                )
+                heatmaps.append(na_heatmap_img.tolist())
+                abnormality__heatmap = True
         
         if run_abnormal_pipeline:
             print("Image classified as Abnormal. Proceeding with TB and disease classification.")
@@ -106,14 +115,42 @@ async def predict_disease(
                 executor, disease_classify, disease_model, img_tensor2, LABELS
             )
 
-            tb_response, diseases = await asyncio.gather(tb_future, disease_future)
+            tb_output, disease_output = await asyncio.gather(tb_future, disease_future)
+
+            tb_response, tb_attn = tb_output
+            disease_labels = disease_output["labels"]
+            disease_probs = disease_output["probs"]
+            disease_att = disease_output["attn_weights"]
             
-            if tb_response == "TB Negative" and len(diseases) == 0:
+            if tb_response == "TB Negative" and len(disease_labels) == 0:
                 response = {"finding": "Normal"}
             else:
-                response = {"finding": "Abnormal"}
                 response["tb_prediction"] = tb_response
-                response["diseases"] = diseases
+                response["diseases"] = disease_probs
+
+                if not abnormality__heatmap:
+                    heatmaps.append([])
+
+                if tb_response == "TB Positive":
+                    tb_heatmap_img = generate_heatmap(
+                        tensor,
+                        tb_attn
+                    )
+                    heatmaps.append(tb_heatmap_img.tolist())
+                else:
+                    heatmaps.append([])
+
+                if len(disease_labels) > 0:
+                    disease_heatmap_img = generate_heatmap(
+                        img_tensor2,
+                        disease_att
+                    )
+                    heatmaps.append(disease_heatmap_img.tolist())
+
+                else:
+                    heatmaps.append([])
+
+        response["heatmaps"] = heatmaps
 
         # ── 6. Save finding to predictions.json ──────────────────────────
         json_filepath = os.path.join(outputDir, "predictions.json")

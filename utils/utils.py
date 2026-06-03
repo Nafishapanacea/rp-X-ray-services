@@ -4,6 +4,8 @@ from PIL import Image
 import pydicom
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
 from transformers import AutoProcessor
 from src.configuration.config import IMAGE_SIZE, MEAN, STD, DEVICE, MODEL_NAME, D_Type
 
@@ -24,7 +26,7 @@ def prepare_image(image: Image.Image):
 
 def disease_classify(model, image_tensor, LABELS):
     with torch.no_grad():
-        logits = model(image_tensor)
+        logits, pooling_attn_weights = model(image_tensor)
         probs = torch.sigmoid(logits)
 
     probs = probs.cpu().numpy()[0]
@@ -33,7 +35,12 @@ def disease_classify(model, image_tensor, LABELS):
     print('probs', probs)
     result = {label: float(prob) for label, prob in zip(LABELS, probs)}
     print("Predictions:", result)
-    return selected_labels
+    # return selected_labels
+    return {
+        "probs": result, 
+        "labels": selected_labels,
+        "attn_weights": pooling_attn_weights
+    }
 
 
 # TB prediction
@@ -44,7 +51,7 @@ def tb_predict(model, image_tensor):
     pred    = 1 if prob >= 0.5 else 0
     finding = "TB positive" if pred == 1 else "TB Negative"
 
-    return finding
+    return finding, pooling_attn_weights
 
 # Normal-abnormal prediction
 def na_predict(model, image_tensor, view_tensor, sex_tensor):
@@ -54,7 +61,7 @@ def na_predict(model, image_tensor, view_tensor, sex_tensor):
     pred    = 1 if prob >= 0.5 else 0
     finding = "Abnormal" if pred == 1 else "Normal"
 
-    return finding
+    return finding, pooling_attn_weights
 
 def preprocess_image(image_path: str) -> torch.Tensor:
 
@@ -97,3 +104,44 @@ def dicom_to_image(dicom_path,output_path,format="png"):
 
     except Exception as e:
         raise RuntimeError(f"Failed to convert Dicom to {format}:{str(e)}")
+
+
+# def register_pooling_hook(model):
+#     attn_store = {}
+
+#     def pool_hook(module, input, output):
+#         attn_store["weights"] = output[1]  # [B, 1, 1024]
+
+#     model.vision_encoder.head.attention.register_forward_hook(pool_hook)
+#     return attn_store
+
+
+def generate_heatmap(pixel_values, attn_weights, img_size=512):
+    """
+    Returns a numpy image for Gradio
+    """
+
+    attn = attn_weights[0, 0]        # [N]
+    attn = attn / (attn.max() + 1e-8)
+
+    heatmap = attn.reshape(32, 32)
+
+    heatmap_up = F.interpolate(
+        heatmap.unsqueeze(0).unsqueeze(0),
+        size=(img_size, img_size),
+        mode="bilinear",
+        align_corners=False
+    )[0, 0]
+
+    heatmap_np = heatmap_up.cpu().numpy()
+    heatmap_np = (heatmap_np * 255).astype(np.uint8)
+
+    heatmap_color = cv2.applyColorMap(heatmap_np, cv2.COLORMAP_JET)
+
+    img = pixel_values[0].permute(1, 2, 0).cpu().numpy()
+    img = (img - img.min()) / (img.max() - img.min())
+    img = (img * 255).astype(np.uint8)
+
+    overlay = cv2.addWeighted(img, 0.75, heatmap_color, 0.25, 0)
+
+    return overlay 

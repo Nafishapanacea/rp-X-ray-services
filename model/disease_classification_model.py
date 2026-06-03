@@ -5,10 +5,14 @@ from src.configuration.config import DEVICE, MODEL_NAME, NUM_LABELS, DISEASE_CLA
 
 
 class CXRMultiLabel(nn.Module):
-    def __init__(self, vision_model, num_labels):
+    def __init__(self, vision_encoder, num_labels):
         super().__init__()
-        self.vision = vision_model
-        in_dim = vision_model.config.hidden_size
+        self.vision_encoder = vision_encoder
+        in_dim = vision_encoder.config.hidden_size
+
+        self.vision_encoder.head.attention.register_forward_hook(
+            self._pooling_attn_hook
+        )
 
         self.head = nn.Sequential(
             nn.Linear(in_dim, 256),
@@ -17,11 +21,14 @@ class CXRMultiLabel(nn.Module):
             nn.Linear(256, num_labels)
         )
 
+    def _pooling_attn_hook(self, module, input, output):
+        self.pooling_attn_weights = output[1]  
+
     def forward(self, pixel_values):
-        out = self.vision(pixel_values=pixel_values, return_dict=True)
+        out = self.vision_encoder(pixel_values=pixel_values, return_dict=True)
         cls = out.last_hidden_state[:, 0, :]
         logits = self.head(cls)
-        return logits
+        return logits, self.pooling_attn_weights
 
 
 def load_disease_classification_model():
@@ -37,8 +44,8 @@ def load_disease_classification_model():
 
     model = CXRMultiLabel(vision, NUM_LABELS).to(DEVICE)
 
-    ckpt = torch.load(DISEASE_CLASSIFICATION_CHECKPOINT_PATH, map_location=DEVICE, weights_only=False)
-    model.load_state_dict(ckpt["model_state"])
+    # ckpt = torch.load(DISEASE_CLASSIFICATION_CHECKPOINT_PATH, map_location=DEVICE, weights_only=False)
+    # model.load_state_dict(ckpt["model_state"])
 
     model.eval()
     return model

@@ -19,7 +19,6 @@ class NA_model(nn.Module):
             self._pooling_attn_hook
         )
        
-
         # Binary classifier head
         self.classifier = nn.Sequential(
             nn.Linear(in_dim +8 + 4 ,256),
