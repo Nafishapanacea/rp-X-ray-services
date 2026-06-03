@@ -106,14 +106,17 @@ async def predict_disease(
                 executor, disease_classify, disease_model, img_tensor2, LABELS
             )
 
-            tb_response, diseases = await asyncio.gather(tb_future, disease_future)
+            tb_response, disease_output  = await asyncio.gather(tb_future, disease_future)
+
+            disease_labels = disease_output["labels"]
+            disease_probs = disease_output["probs"]
             
-            if tb_response == "TB Negative" and len(diseases) == 0:
+            if tb_response == "TB Negative" and len(disease_labels) == 0:
                 response = {"finding": "Normal"}
             else:
                 response = {"finding": "Abnormal"}
                 response["tb_prediction"] = tb_response
-                response["diseases"] = diseases
+                response["diseases"] = disease_probs
 
         # ── 6. Save finding to predictions.json ──────────────────────────
         json_filepath = os.path.join(outputDir, "predictions.json")

@@ -33,7 +33,11 @@ def disease_classify(model, image_tensor, LABELS):
     print('probs', probs)
     result = {label: float(prob) for label, prob in zip(LABELS, probs)}
     print("Predictions:", result)
-    return selected_labels
+    # return selected_labels
+    return {
+        "probs": result,
+        "labels": selected_labels
+    }
 
 
 # TB prediction

@@ -37,8 +37,8 @@ def load_disease_classification_model():
 
     model = CXRMultiLabel(vision, NUM_LABELS).to(DEVICE)
 
-    ckpt = torch.load(DISEASE_CLASSIFICATION_CHECKPOINT_PATH, map_location=DEVICE, weights_only=False)
-    model.load_state_dict(ckpt["model_state"])
+    # ckpt = torch.load(DISEASE_CLASSIFICATION_CHECKPOINT_PATH, map_location=DEVICE, weights_only=False)
+    # model.load_state_dict(ckpt["model_state"])
 
     model.eval()
     return model

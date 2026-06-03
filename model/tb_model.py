@@ -49,8 +49,8 @@ def load_tb_model():
 
     model = TB_model(vision).to(DEVICE)
 
-    ckpt = torch.load(TB_CHECKPOINT_PATH, map_location=DEVICE)
-    model.load_state_dict(ckpt["model_state"])
+    # ckpt = torch.load(TB_CHECKPOINT_PATH, map_location=DEVICE)
+    # model.load_state_dict(ckpt["model_state"])
 
     model.eval()
     return model

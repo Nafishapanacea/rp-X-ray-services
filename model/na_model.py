@@ -59,8 +59,8 @@ def load_na_model():
 
     model = NA_model(vision).to(DEVICE)
 
-    ckpt = torch.load(NA_CHECKPOINT_PATH, map_location=DEVICE)
-    model.load_state_dict(ckpt)
+    # ckpt = torch.load(NA_CHECKPOINT_PATH, map_location=DEVICE)
+    # model.load_state_dict(ckpt)
 
     model.eval()
     return model
