@@ -38,6 +38,11 @@ def disease_classify(model, image_tensor, LABELS):
         "probs": result,
         "labels": selected_labels
     }
+    # return selected_labels
+    return {
+        "probs": result, 
+        "labels": selected_labels
+    }
 
 
 # TB prediction

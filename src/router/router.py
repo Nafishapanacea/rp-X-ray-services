@@ -106,6 +106,10 @@ async def predict_disease(
                 executor, disease_classify, disease_model, img_tensor2, LABELS
             )
 
+            tb_response, disease_output = await asyncio.gather(tb_future, disease_future)
+
+            disease_labels = disease_output["labels"]
+            disease_probs = disease_output["probs"]
             tb_response, disease_output  = await asyncio.gather(tb_future, disease_future)
 
             disease_labels = disease_output["labels"]
